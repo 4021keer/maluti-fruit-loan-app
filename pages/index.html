@@ -797,6 +797,7 @@ function buildAmortisationSchedule(){
 </script>
 <style>
   #globalSearchShell{background:#fff;border-bottom:1px solid var(--line);padding:10px 22px;position:relative}
+  body:has(#backup.page.active) #globalSearchShell{display:none}
   #globalSearch{max-width:560px}
   #globalSearchResults{position:absolute;z-index:900;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px #10203022;max-width:680px;width:min(680px,calc(100vw - 44px));margin-top:6px;overflow:hidden}
   #globalSearchResults button{display:block;width:100%;border:0;background:#fff;text-align:left;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
