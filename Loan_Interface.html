@@ -383,58 +383,107 @@ function buildAmortisationSchedule(){
 
   let paymentsPage=document.getElementById('loan-payments');
   if(paymentsPage){
-    paymentsPage.innerHTML=`<div class="card" id="bulkPaymentCard"><h2>Post Payment Against Loan</h2><p class="muted">Post one payment amount across one employee's open loans. Choose the date, source and note, then check each line before posting.</p><div class="two"><div><label>Employee</label><select id="bulkPaymentEmployee"></select></div><div><label>Payment Date</label><input id="bulkPaymentDate" type="date"></div></div><div class="grid" style="margin-top:8px"><div><label>Payment From</label><select id="bulkPaymentSource"><option>Payroll</option><option>EFT</option><option>Cash</option></select></div><div><label>Total Payment Amount</label><input id="bulkPaymentTotal" type="number" min="0.01" step="0.01" placeholder="Amount received"></div><div><label>Employee Outstanding</label><input id="bulkEmployeeOutstanding" readonly></div><div><label>Number of Open Loans</label><input id="bulkOpenLoanCount" readonly></div></div><label>Note</label><textarea id="bulkPaymentNote" placeholder="Optional note or reference"></textarea><div class="actions"><button class="btn" type="button" id="bulkAutoAllocate">Auto Allocate</button><button class="primary" type="button" id="postBulkEmployeePayments">Post Payments</button><button class="btn" type="button" id="clearBulkPayment">Clear Fields</button></div><p id="bulkPaymentStatus" class="muted"></p><div class="tablebox" style="margin-top:14px"><table><thead><tr><th>Loan #</th><th>Loan Type</th><th>Loan Date</th><th>Status</th><th>Instalment</th><th>Outstanding</th><th>Amount to Post</th></tr></thead><tbody id="bulkPaymentRows"><tr><td colspan="7" class="empty">Select an employee.</td></tr></tbody></table></div></div>`;
-    const bulkEmployee=document.getElementById('bulkPaymentEmployee'),bulkDate=document.getElementById('bulkPaymentDate'),bulkSource=document.getElementById('bulkPaymentSource'),bulkTotal=document.getElementById('bulkPaymentTotal'),bulkOutstanding=document.getElementById('bulkEmployeeOutstanding'),bulkCount=document.getElementById('bulkOpenLoanCount'),bulkNote=document.getElementById('bulkPaymentNote'),bulkStatus=document.getElementById('bulkPaymentStatus'),bulkRows=document.getElementById('bulkPaymentRows');
-    bulkDate.value=localToday();
-    function openLoansForEmployee(){
-      let emp=db.employees.find(e=>e.id===bulkEmployee.value);
-      if(!emp)return [];
-      return db.loans.filter(loan=>loan.employeeNo===emp.employeeNo&&loan.status!=='Cancelled'&&loanBalance(loan)>.005).sort((a,b)=>String(a.firstPeriod||loanDate(a)).localeCompare(String(b.firstPeriod||loanDate(b)))||String(a.applicationNo||'').localeCompare(String(b.applicationNo||''),undefined,{numeric:true}));
+    paymentsPage.innerHTML=`<div class="card" id="loanPaymentCard"><h2 id="loanPaymentFormTitle">Post Payment Against Loan</h2><p class="muted">Choose the employee and the specific loan you want to post a payment against. The payment date is recorded on the loan and the amount is deducted from its balance.</p><div class="two"><div><label>Employee</label><select id="paymentEmployee"></select></div><div><label>Loan</label><select id="paymentLoan"><option value="">-- Select Employee First --</option></select></div></div><div class="grid" style="margin-top:8px"><div><label>Payment Date</label><input id="paymentDate" type="date"></div><div><label>Payment From</label><select id="paymentSource"><option>Payroll</option><option>EFT</option><option>Cash</option></select></div><div><label>Amount</label><input id="paymentAmount" type="number" min="0.01" step="0.01"></div><div><label>Outstanding Balance</label><input id="paymentOutstanding" readonly></div></div><label>Note</label><textarea id="paymentNote" placeholder="Optional note or reference"></textarea><input id="editPaymentId" type="hidden"><div class="actions"><button class="primary" type="button" id="postLoanPayment">Post Payment</button><button class="btn" type="button" id="clearLoanPayment">Clear Fields</button><button class="btn hide" type="button" id="cancelPaymentEdit">Cancel Edit</button></div><p id="loanPaymentStatus" class="muted"></p></div><div class="card" style="margin-top:16px"><h3>Posted Payment History</h3><div class="tablebox"><table><thead><tr><th>Date</th><th>Loan #</th><th>Employee</th><th>Source</th><th>Amount</th><th>Balance After</th><th>Note</th><th>Action</th></tr></thead><tbody id="loanPaymentHistoryRows"><tr><td colspan="8" class="empty">No payments posted yet.</td></tr></tbody></table></div></div>`;
+    const payEmployee=document.getElementById('paymentEmployee'),payLoan=document.getElementById('paymentLoan'),payDate=document.getElementById('paymentDate'),paySource=document.getElementById('paymentSource'),payAmount=document.getElementById('paymentAmount'),payOutstanding=document.getElementById('paymentOutstanding'),payNote=document.getElementById('paymentNote'),payStatus=document.getElementById('loanPaymentStatus'),editPaymentId=document.getElementById('editPaymentId'),loanPaymentFormTitle=document.getElementById('loanPaymentFormTitle'),postLoanPayment=document.getElementById('postLoanPayment'),cancelPaymentEdit=document.getElementById('cancelPaymentEdit'),loanPaymentHistoryRows=document.getElementById('loanPaymentHistoryRows');
+    payDate.value=localToday();
+    function recalcLoanBalances(loan){
+      let entries=(loan.repayments||[]).slice().sort((a,b)=>String(a.date||a.postedAt||'').localeCompare(String(b.date||b.postedAt||'')));
+      let running=Number(loan.amount)||0;
+      entries.forEach(item=>{running-=(Number(item.amount)||0);item.balanceAfter=Math.max(0,running)});
     }
-    function renderBulkEmployees(){
-      let selected=bulkEmployee.value;
-      bulkEmployee.innerHTML='<option value="">-- Select Employee --</option>'+db.employees.filter(e=>e.active!==false).map(e=>`<option value="${esc(e.id)}">${esc(e.employeeNo)} - ${esc(e.employeeName)}</option>`).join('');
-      if(db.employees.some(e=>e.id===selected))bulkEmployee.value=selected;
+    function loansForEmployee(employeeNo){
+      let selectedLoan=payLoan.value;
+      return db.loans.filter(loan=>loan.employeeNo===employeeNo&&loan.status!=='Cancelled'&&(loanBalance(loan)>.005||loan.id===selectedLoan)).sort((a,b)=>String(a.firstPeriod||loanDate(a)).localeCompare(String(b.firstPeriod||loanDate(b)))||String(a.applicationNo||'').localeCompare(String(b.applicationNo||''),undefined,{numeric:true}));
     }
-    function renderBulkRows(){
-      renderBulkEmployees();
-      let loans=openLoansForEmployee(),total=Number(bulkTotal.value),remaining=Number.isFinite(total)&&total>0?total:0;
-      bulkOutstanding.value=money(loans.reduce((sum,loan)=>sum+loanBalance(loan),0));
-      bulkCount.value=String(loans.length);
-      if(!loans.length){bulkRows.innerHTML=`<tr><td colspan="7" class="empty">${bulkEmployee.value?'No open loans for this employee.':'Select an employee.'}</td></tr>`;return}
-      bulkRows.innerHTML=loans.map(loan=>{
-        let balance=loanBalance(loan),suggested=remaining>0?Math.min(balance,remaining):Math.min(balance,Number(loan.payment)||balance);
-        if(remaining>0)remaining-=suggested;
-        return `<tr><td><b>${esc(loan.applicationNo||'')}</b></td><td>${esc(loan.type||'Loan')}</td><td>${esc(loanDate(loan)||'—')}</td><td><span class="pill ${statusClass(statusLabel(loan))}">${esc(statusLabel(loan))}</span></td><td>${money(loan.payment)}</td><td>${money(balance)}</td><td><input class="payment-amount bulk-loan-payment" data-loan-id="${esc(loan.id)}" type="number" min="0" max="${balance.toFixed(2)}" step="0.01" value="${suggested?suggested.toFixed(2):''}"></td></tr>`;
-      }).join('');
+    function renderPaymentEmployees(){
+      let selected=payEmployee.value;
+      payEmployee.innerHTML='<option value="">-- Select Employee --</option>'+db.employees.filter(e=>e.active!==false).map(e=>`<option value="${esc(e.employeeNo)}">${esc(e.employeeNo)} - ${esc(e.employeeName)}</option>`).join('');
+      if(db.employees.some(e=>e.employeeNo===selected))payEmployee.value=selected;
     }
-    window.renderPaymentPosting=renderBulkRows;
-    bulkEmployee.onchange=()=>{bulkStatus.textContent='';renderBulkRows()};
-    bulkTotal.oninput=renderBulkRows;
-    bulkAutoAllocate.onclick=renderBulkRows;
-    clearBulkPayment.onclick=()=>{bulkPaymentEmployee.value='';bulkDate.value=localToday();bulkSource.value='Payroll';bulkTotal.value='';bulkNote.value='';bulkStatus.textContent='';bulkStatus.className='muted';renderBulkRows()};
-    postBulkEmployeePayments.onclick=()=>{
-      let emp=db.employees.find(e=>e.id===bulkEmployee.value),date=bulkDate.value,source=bulkSource.value,note=bulkNote.value.trim();
-      if(!emp){bulkStatus.textContent='Select an employee first.';bulkStatus.className='bad pill';return}
-      if(!date){bulkStatus.textContent='Enter a payment date.';bulkStatus.className='bad pill';return}
-      let lines=[...document.querySelectorAll('.bulk-loan-payment')].map(input=>({input,loan:db.loans.find(loan=>loan.id===input.dataset.loanId),amount:Number(input.value)})).filter(x=>x.loan&&Number.isFinite(x.amount)&&x.amount>.005);
-      if(!lines.length){bulkStatus.textContent='Enter at least one amount to post.';bulkStatus.className='bad pill';return}
-      let total=lines.reduce((sum,x)=>sum+Math.min(x.amount,loanBalance(x.loan)),0);
-      if(!confirm(`Post ${money(total)} ${source} payment for ${emp.employeeName}?`))return;
-      let period=date.slice(0,7);
-      lines.forEach(({loan,amount})=>{
-        amount=Math.min(amount,loanBalance(loan));
-        if(amount<=.005)return;
-        let balanceAfter=Math.max(0,loanBalance(loan)-amount);
-        loan.repayments.push({id:crypto.randomUUID(),date,period,amount,source,note,balanceAfter,postedAt:new Date().toISOString()});
-        normaliseLoanStatus(loan);
-      });
-      save();
-      bulkStatus.textContent=`Payments posted: ${money(total)}.`;
-      bulkStatus.className='good pill';
-      bulkTotal.value='';bulkNote.value='';renderBulkRows();
+    function renderPaymentLoans(){
+      let employeeNo=payEmployee.value,selectedLoan=payLoan.value;
+      if(!employeeNo){payLoan.innerHTML='<option value="">-- Select Employee First --</option>';updateOutstanding();return}
+      let loans=loansForEmployee(employeeNo);
+      payLoan.innerHTML='<option value="">-- Select Loan --</option>'+loans.map(loan=>`<option value="${loan.id}">${esc(loan.applicationNo||'')} - ${esc(loan.type||'Loan')} - Outstanding ${money(loanBalance(loan))}</option>`).join('');
+      if(loans.some(loan=>loan.id===selectedLoan))payLoan.value=selectedLoan;
+      updateOutstanding();
+    }
+    function updateOutstanding(){
+      let loan=db.loans.find(l=>l.id===payLoan.value);
+      payOutstanding.value=loan?money(loanBalance(loan)):'';
+    }
+    function resetPaymentForm(){
+      payEmployee.value='';renderPaymentLoans();payDate.value=localToday();paySource.value='Payroll';payAmount.value='';payNote.value='';editPaymentId.value='';loanPaymentFormTitle.textContent='Post Payment Against Loan';postLoanPayment.textContent='Post Payment';cancelPaymentEdit.classList.add('hide');payStatus.textContent='';payStatus.className='muted';
+    }
+    function clearFieldsAfterPost(){
+      payAmount.value='';payNote.value='';editPaymentId.value='';loanPaymentFormTitle.textContent='Post Payment Against Loan';postLoanPayment.textContent='Post Payment';cancelPaymentEdit.classList.add('hide');
+    }
+    function renderPaymentHistory(){
+      let history=db.loans.flatMap(loan=>(loan.repayments||[]).map(item=>({loan,item}))).sort((a,b)=>String(b.item.date||b.item.postedAt||'').localeCompare(String(a.item.date||a.item.postedAt||'')));
+      loanPaymentHistoryRows.innerHTML=history.length?history.map(({loan,item})=>{
+        let reversed=(loan.repayments||[]).some(r=>r.reversalOf===item.id),isReversal=item.source==='Reversal',canEdit=!isReversal&&!reversed,canReverse=Number(item.amount)>0&&!reversed&&!isReversal;
+        return `<tr><td>${esc(item.date||String(item.postedAt||'').slice(0,10)||'')}</td><td><b>${esc(loan.applicationNo||'')}</b></td><td><b>${esc(loan.employeeNo)}</b><br><span class="muted">${esc(loan.employeeName)}</span></td><td>${esc(item.source||'Payment')}</td><td>${money(item.amount)}</td><td>${money(item.balanceAfter)}</td><td>${esc(item.note||'')}</td><td>${canEdit?`<button class="btn" onclick="editLoanPaymentEntry('${loan.id}','${item.id}')">Edit</button> `:''}${canReverse?`<button class="btn danger" onclick="reverseLoanPayment('${loan.id}','${item.id}')">Reverse</button>`:reversed?'<span class="pill warn">Reversed</span>':''}</td></tr>`;
+      }).join(''):'<tr><td colspan="8" class="empty">No payments posted yet.</td></tr>';
+    }
+    window.editLoanPaymentEntry=function(loanId,paymentId){
+      let loan=db.loans.find(l=>l.id===loanId),item=loan&&(loan.repayments||[]).find(p=>p.id===paymentId);
+      if(!loan||!item)return;
+      renderPaymentEmployees();
+      payEmployee.value=loan.employeeNo;
+      renderPaymentLoans();
+      payLoan.value=loan.id;
+      updateOutstanding();
+      payDate.value=item.date||String(item.postedAt||'').slice(0,10)||localToday();
+      paySource.value=item.source||'Payroll';
+      payAmount.value=Number(item.amount||0).toFixed(2);
+      payNote.value=item.note||'';
+      editPaymentId.value=item.id;
+      loanPaymentFormTitle.textContent='Edit Payment';
+      postLoanPayment.textContent='Update Payment';
+      cancelPaymentEdit.classList.remove('hide');
+      payStatus.textContent='';payStatus.className='muted';
+      window.scrollTo({top:0,behavior:'smooth'});
     };
-    renderBulkRows();
+    window.renderPaymentPosting=function(){renderPaymentEmployees();renderPaymentLoans();renderPaymentHistory()};
+    payEmployee.onchange=()=>{payLoan.value='';payAmount.value='';payStatus.textContent='';renderPaymentLoans()};
+    payLoan.onchange=()=>{payAmount.value='';updateOutstanding()};
+    clearLoanPayment.onclick=resetPaymentForm;
+    cancelPaymentEdit.onclick=resetPaymentForm;
+    postLoanPayment.onclick=()=>{
+      let loan=db.loans.find(l=>l.id===payLoan.value),date=payDate.value,source=paySource.value,amount=Number(payAmount.value),note=payNote.value.trim(),editingId=editPaymentId.value;
+      if(!loan){payStatus.textContent='Select a loan first.';payStatus.className='bad pill';return}
+      if(!date){payStatus.textContent='Enter a payment date.';payStatus.className='bad pill';return}
+      if(!Number.isFinite(amount)||amount<=0){payStatus.textContent='Enter a valid payment amount.';payStatus.className='bad pill';return}
+      let currentBalance=loanBalance(loan);
+      if(editingId){
+        let existing=(loan.repayments||[]).find(p=>p.id===editingId);
+        if(!existing){payStatus.textContent='This payment could not be found.';payStatus.className='bad pill';return}
+        let balanceExcluding=currentBalance+(Number(existing.amount)||0);
+        if(amount>balanceExcluding+.005){payStatus.textContent=`Amount posted cannot be greater than the outstanding balance of ${money(balanceExcluding)}.`;payStatus.className='bad pill';return}
+        if(!confirm(`Update this payment to ${money(amount)}?`))return;
+        existing.date=date;existing.period=date.slice(0,7);existing.amount=amount;existing.source=source;existing.note=note;
+        recalcLoanBalances(loan);
+        normaliseLoanStatus(loan);
+        save();
+        payStatus.textContent=`Payment updated. Balance after payment: ${money(loanBalance(loan))}.`;
+        payStatus.className='good pill';
+      }else{
+        if(amount>currentBalance+.005){payStatus.textContent=`Amount posted cannot be greater than the outstanding balance of ${money(currentBalance)}.`;payStatus.className='bad pill';return}
+        if(!confirm(`Post ${money(amount)} ${source} payment to loan ${loan.applicationNo}?`))return;
+        let balanceAfter=Math.max(0,currentBalance-amount);
+        loan.repayments.push({id:crypto.randomUUID(),date,period:date.slice(0,7),amount,source,note,balanceAfter,postedAt:new Date().toISOString()});
+        normaliseLoanStatus(loan);
+        save();
+        payStatus.textContent=`Payment posted. Balance after payment: ${money(balanceAfter)}.`;
+        payStatus.className='good pill';
+      }
+      clearFieldsAfterPost();
+      renderPaymentLoans();
+      renderPaymentHistory();
+    };
+    renderPaymentEmployees();
+    renderPaymentLoans();
+    renderPaymentHistory();
   }
 
   let reportsButton=document.querySelector('#nav button[data-page="recon"]');
@@ -511,7 +560,6 @@ function buildAmortisationSchedule(){
     if(dashboardTypeList){
       let groups={};
       db.loans.filter(loan=>loan.status!=='Cancelled').forEach(loan=>{let type=loan.type||'Loan';if(!groups[type])groups[type]={balance:0,count:0};groups[type].balance+=loanBalance(loan);groups[type].count++});
-      window.updateLoanReportHeader?.('summary',from,to,'All Employees');
       let rows=Object.entries(groups).sort((a,b)=>b[1].balance-a[1].balance).slice(0,6);
       dashboardTypeList.innerHTML=rows.length?rows.map(([type,x])=>`<div class="dashboard-list-row"><span>${esc(type)}<br><span class="muted">${x.count} loans</span></span><b>${money(x.balance)}</b></div>`).join(''):'<div class="empty">No loan data yet.</div>';
     }
