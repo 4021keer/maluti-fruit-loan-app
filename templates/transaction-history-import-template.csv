@@ -1,0 +1,2 @@
+source,employee_number,period,amount,reference,status,accepted_at,loan_type
+Payroll,001,2026-10,100.00,October payroll deduction,Accepted,2026-10-31,Staff Loan

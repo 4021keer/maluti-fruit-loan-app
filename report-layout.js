@@ -1,0 +1,14 @@
+(() => {
+const style=document.createElement('style');style.textContent=window.loanReportCss;document.head.append(style);
+window.updateLoanReportHeader=(kind,from,to,employee)=>{
+const config={history:['.history-report-card','Employee Loan History','Review each employee loan, repayments and outstanding balances for the selected period.'],payments:['.payment-history-report-card','Payment History','Review every payment posted against loans, per employee or across all employees.'],summary:['.summary-report-card','Summary by Loan Type','Compare original loan values, repayments and current balances by loan category.'],month:['.management-report-card','Monthly Loan Pack','Use this pack to check new loans, payroll deductions, posted payments, Pastel totals and exceptions.'],amortisation:['.amortisation-report-card','Amortisation Schedule','Follow the planned instalment, paid amount and remaining balance for each loan month by month.']}[kind];if(!config)return;const card=document.querySelector(config[0]);if(!card)return;card.classList.add('report-sheet');
+let heading=card.querySelector('.report-heading');if(!heading){heading=document.createElement('div');heading.className='report-heading';card.prepend(heading);const oldTitle=card.querySelector('h3');if(oldTitle)oldTitle.hidden=true;}
+const title=config[1];
+heading.innerHTML='<div class="report-brand">MALUTI FRUIT</div><h1></h1><p class="report-purpose"></p><div class="report-meta"></div>';
+heading.querySelector('h1').textContent=title;heading.querySelector('.report-purpose').textContent=config[2];let footer=card.querySelector('.report-footer');if(!footer){footer=document.createElement('footer');footer.className='report-footer';card.append(footer);}footer.textContent='Maluti Fruit | '+title+' | Confidential';
+const generated=new Date().toLocaleString('en-GB',{timeZone:'Africa/Johannesburg',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+for(const [label,value] of [['Report',title],['Generated (SAST)',generated],['Employee',employee],['Date range',(from||'Beginning of records')+' to '+(to||'Latest records')]]){const row=document.createElement('div'),b=document.createElement('b');b.textContent=label;row.append(b,document.createTextNode(value));heading.querySelector('.report-meta').append(row);}
+if(kind==='month'){const row=document.createElement('div'),b=document.createElement('b');b.textContent='Balance basis';row.append(b,document.createTextNode('Current recorded balance'));heading.querySelector('.report-meta').append(row)}
+};
+document.getElementById('clearReports')?.addEventListener('click',()=>document.querySelectorAll('.history-report-card .report-heading,.payment-history-report-card .report-heading,.summary-report-card .report-heading,.management-report-card .report-heading,.amortisation-report-card .report-heading').forEach(x=>{x.parentElement.querySelector('h3')?.removeAttribute('hidden');x.remove();}));
+})();
